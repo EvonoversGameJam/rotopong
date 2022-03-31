@@ -146,6 +146,13 @@ fn rotate_paddle(
     }
 }
 
+fn check_collisions(mut ball: Query<(&mut Velocity, &Transform), With<Ball>>, paddles: Query<&Transform, With<Paddle>>) {
+    let (mut ball_velocity, ball_transform) = ball.single_mut();
+    for paddle_transform in paddles.iter() {
+        let distance = ball_transform.translation - paddle_transform.translation;
+    }
+}
+
 #[derive(Component)]
 pub struct InputConfig {
     pub left: KeyCode,
