@@ -1,3 +1,6 @@
+mod components;
+use components::*;
+
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
@@ -8,6 +11,7 @@ fn main() {
         .add_system(revert_velocity)
         .add_system(move_paddle)
         .add_system(rotate_paddle)
+        .add_system(check_collisions)
         .add_plugins(DefaultPlugins)
         .run();
 }
@@ -21,31 +25,31 @@ fn setup(mut commands: Commands, windows: Res<Windows>) {
         .insert(Speed(50.))
         .insert_bundle(SpriteBundle {
             sprite: Sprite {
-                custom_size: Some(Vec2::new(20.0, 20.0)),
+                custom_size: Some(Vec2::new(10.0, 10.0)),
                 ..Default::default()
             },
             ..Default::default()
         });
 
     let window = windows.get_primary().unwrap();
-    commands
-        .spawn()
-        .insert(Paddle)
-        .insert(InputConfig::left())
-        .insert(Velocity(Vec3::ZERO))
-        .insert(Speed(100.))
-        .insert_bundle(SpriteBundle {
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(100.0, 10.0)),
-                ..Default::default()
-            },
-            transform: Transform {
-                rotation: Quat::from_rotation_z(PI * 3.0 / 2.0),
-                translation: Vec3::new(-window.width() / 2. + 10., 0., 0.),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+    // commands
+    //     .spawn()
+    //     .insert(Paddle)
+    //     .insert(InputConfig::left())
+    //     .insert(Velocity(Vec3::ZERO))
+    //     .insert(Speed(100.))
+    //     .insert_bundle(SpriteBundle {
+    //         sprite: Sprite {
+    //             custom_size: Some(Vec2::new(100.0, 10.0)),
+    //             ..Default::default()
+    //         },
+    //         transform: Transform {
+    //             rotation: Quat::from_rotation_z(PI * 3.0 / 2.0),
+    //             translation: Vec3::new(-window.width() / 2. + 10., 0., 0.),
+    //             ..Default::default()
+    //         },
+    //         ..Default::default()
+    //     });
     commands
         .spawn()
         .insert(Paddle)
@@ -65,18 +69,6 @@ fn setup(mut commands: Commands, windows: Res<Windows>) {
             ..Default::default()
         });
 }
-
-#[derive(Component)]
-struct Ball;
-
-#[derive(Component)]
-struct Paddle;
-
-#[derive(Component)]
-struct Velocity(pub Vec3);
-
-#[derive(Component)]
-struct Speed(pub f32);
 
 fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity, &Speed)>) {
     for (mut transform, velocity, speed) in query.iter_mut() {
@@ -131,6 +123,20 @@ fn move_paddle(
     }
 }
 
+fn check_collisions(
+    mut ball: Query<(&mut Velocity, &Transform), With<Ball>>,
+    paddles: Query<&Transform, With<Paddle>>,
+) {
+    let (mut ball_velocity, ball_transform) = ball.single_mut();
+    for paddle_transform in paddles.iter() {
+        let result = ball_transform.translation - paddle_transform.translation;
+        let rotated = paddle_transform.rotation * result;
+        if rotated.x.abs() < 50. && rotated.y.abs() < 5. {
+            ball_velocity.0 = result.normalize();
+        }
+    }
+}
+
 fn rotate_paddle(
     time: Res<Time>,
     input: Res<Input<KeyCode>>,
@@ -142,47 +148,6 @@ fn rotate_paddle(
         }
         if input.pressed(keys.rot_2) {
             transform.rotation *= Quat::from_rotation_z(time.delta().as_secs_f32() * -2.);
-        }
-    }
-}
-
-fn check_collisions(mut ball: Query<(&mut Velocity, &Transform), With<Ball>>, paddles: Query<&Transform, With<Paddle>>) {
-    let (mut ball_velocity, ball_transform) = ball.single_mut();
-    for paddle_transform in paddles.iter() {
-        let distance = ball_transform.translation - paddle_transform.translation;
-    }
-}
-
-#[derive(Component)]
-pub struct InputConfig {
-    pub left: KeyCode,
-    pub right: KeyCode,
-    pub down: KeyCode,
-    pub up: KeyCode,
-    pub rot_1: KeyCode,
-    pub rot_2: KeyCode,
-}
-
-impl InputConfig {
-    pub fn left() -> Self {
-        Self {
-            right: KeyCode::D,
-            left: KeyCode::A,
-            up: KeyCode::W,
-            down: KeyCode::S,
-            rot_1: KeyCode::Q,
-            rot_2: KeyCode::E,
-        }
-    }
-
-    pub fn right() -> Self {
-        Self {
-            right: KeyCode::Right,
-            left: KeyCode::Left,
-            up: KeyCode::Up,
-            down: KeyCode::Down,
-            rot_1: KeyCode::Comma,
-            rot_2: KeyCode::Period,
         }
     }
 }
