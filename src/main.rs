@@ -1,73 +1,46 @@
+use std::f32::consts::PI;
+
+use bevy::{prelude::*, transform::TransformSystem};
+use impacted::CollisionShape;
+// use bevy_inspector_egui::WorldInspectorPlugin;
+
 mod components;
 use components::*;
 
-use bevy::prelude::*;
-use std::f32::consts::PI;
+#[derive(Debug)]
+struct Score {
+    pub left: usize,
+    pub right: usize,
+}
 
 fn main() {
     App::new()
         .add_startup_system(setup)
+        .insert_resource(Score { left: 0, right: 0 })
         .add_system(apply_velocity)
-        .add_system(revert_velocity)
         .add_system(move_paddle)
         .add_system(rotate_paddle)
-        .add_system(check_collisions)
+        .add_system_to_stage(
+            CoreStage::PostUpdate,
+            update_shape_transforms
+                .chain(check_collisions)
+                .after(TransformSystem::TransformPropagate),
+        )
         .add_plugins(DefaultPlugins)
+        // Inspector
+        // .add_plugin(WorldInspectorPlugin::new())
         .run();
 }
 
 fn setup(mut commands: Commands, windows: Res<Windows>) {
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    commands
-        .spawn()
-        .insert(Ball)
-        .insert(Velocity(Vec3::new(5., 1., 0.).normalize()))
-        .insert(Speed(50.))
-        .insert_bundle(SpriteBundle {
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(10.0, 10.0)),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
 
     let window = windows.get_primary().unwrap();
-    // commands
-    //     .spawn()
-    //     .insert(Paddle)
-    //     .insert(InputConfig::left())
-    //     .insert(Velocity(Vec3::ZERO))
-    //     .insert(Speed(100.))
-    //     .insert_bundle(SpriteBundle {
-    //         sprite: Sprite {
-    //             custom_size: Some(Vec2::new(100.0, 10.0)),
-    //             ..Default::default()
-    //         },
-    //         transform: Transform {
-    //             rotation: Quat::from_rotation_z(PI * 3.0 / 2.0),
-    //             translation: Vec3::new(-window.width() / 2. + 10., 0., 0.),
-    //             ..Default::default()
-    //         },
-    //         ..Default::default()
-    //     });
-    commands
-        .spawn()
-        .insert(Paddle)
-        .insert(InputConfig::right())
-        .insert(Velocity(Vec3::ZERO))
-        .insert(Speed(100.))
-        .insert_bundle(SpriteBundle {
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(100.0, 10.0)),
-                ..Default::default()
-            },
-            transform: Transform {
-                rotation: Quat::from_rotation_z(PI / 2.0),
-                translation: Vec3::new(window.width() / 2. - 10., 0., 0.),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+
+    BallBundle::spawn(&mut commands);
+    WallBundle::spawn(&mut commands, window);
+    PlayerBundle::spawn_left(&mut commands, window);
+    PlayerBundle::spawn_right(&mut commands, window);
 }
 
 fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity, &Speed)>) {
@@ -76,23 +49,11 @@ fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity, 
     }
 }
 
-fn revert_velocity(
-    windows: Res<Windows>,
-    mut query: Query<(&mut Velocity, &Transform), With<Ball>>,
+fn update_shape_transforms(
+    mut shapes: Query<(&mut CollisionShape, &GlobalTransform), Changed<GlobalTransform>>,
 ) {
-    let (mut velocity, transform) = query.single_mut();
-
-    let window = windows.get_primary().unwrap();
-    if transform.translation.x > window.width() / 2.
-        || transform.translation.x < -window.width() / 2.
-    {
-        velocity.0.x *= -1.;
-    }
-
-    if transform.translation.y > window.height() / 2.
-        || transform.translation.y < -window.height() / 2.
-    {
-        velocity.0.y *= -1.;
+    for (mut shape, transform) in shapes.iter_mut() {
+        shape.set_transform(*transform);
     }
 }
 
@@ -124,15 +85,44 @@ fn move_paddle(
 }
 
 fn check_collisions(
-    mut ball: Query<(&mut Velocity, &Transform), With<Ball>>,
-    paddles: Query<&Transform, With<Paddle>>,
+    mut score: ResMut<Score>,
+    mut ball: Query<
+        (&mut Velocity, &mut Transform, &CollisionShape),
+        (With<Ball>, Changed<CollisionShape>, Without<Paddle>),
+    >,
+    paddles: Query<(&Transform, &CollisionShape), (With<Paddle>, Without<Ball>)>,
+    walls: Query<(&CollisionShape, &Wall)>,
 ) {
-    let (mut ball_velocity, ball_transform) = ball.single_mut();
-    for paddle_transform in paddles.iter() {
-        let result = ball_transform.translation - paddle_transform.translation;
-        let rotated = paddle_transform.rotation * result;
-        if rotated.x.abs() < 50. && rotated.y.abs() < 5. {
-            ball_velocity.0 = result.normalize();
+    let (mut ball_velocity, mut ball_transform, ball_shape) = ball.single_mut();
+    for (paddle_transform, paddle_shape) in paddles.iter() {
+        if paddle_shape.is_collided_with(ball_shape) {
+            ball_velocity.0 =
+                (ball_transform.translation - paddle_transform.translation).normalize();
+        }
+    }
+    for (wall_shape, kind) in walls.iter() {
+        if wall_shape.is_collided_with(ball_shape) {
+            match kind {
+                Wall::Horizontal => ball_velocity.0.y *= -1.,
+                Wall::Vertical(Side::Left) => {
+                    score.right += 1;
+                    ball_velocity.0 = Vec3::X;
+                    *ball_transform = Transform {
+                        rotation: Quat::from_rotation_z(PI / 4.0),
+                        ..Default::default()
+                    };
+                    dbg!(&score);
+                }
+                Wall::Vertical(Side::Right) => {
+                    score.left += 1;
+                    ball_velocity.0 = -Vec3::X;
+                    *ball_transform = Transform {
+                        rotation: Quat::from_rotation_z(PI / 4.0),
+                        ..Default::default()
+                    };
+                    dbg!(&score);
+                }
+            }
         }
     }
 }

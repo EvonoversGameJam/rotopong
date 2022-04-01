@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.6.1"
+impacted = { version = "1.3.0", features = ["bevy-06"] }
+bevy-inspector-egui = "0.9.0"
