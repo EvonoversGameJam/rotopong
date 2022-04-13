@@ -14,6 +14,12 @@ struct Score {
     pub right: usize,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum AppState {
+    Menu,
+    InGame,
+}
+
 impl std::fmt::Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{}:{}", self.left, self.right))
@@ -22,17 +28,21 @@ impl std::fmt::Display for Score {
 
 fn main() {
     App::new()
-        .add_startup_system(setup)
+        .add_state(AppState::InGame)
         .insert_resource(Score { left: 0, right: 0 })
-        .add_system(apply_velocity)
-        .add_system(move_paddle)
-        .add_system(rotate_paddle)
         .add_system(score_ui)
-        .add_system_to_stage(
+        .add_system_set(SystemSet::on_enter(AppState::InGame).with_system(setup))
+        .add_system_set(
+            SystemSet::on_update(AppState::InGame)
+                .with_system(apply_velocity)
+                .with_system(move_paddle)
+                .with_system(rotate_paddle),
+        )
+        .add_system_set_to_stage(
             CoreStage::PostUpdate,
-            update_shape_transforms
-                .chain(check_collisions)
-                .after(TransformSystem::TransformPropagate),
+            SystemSet::on_update(AppState::InGame).with_system(
+                update_shape_transforms.chain(check_collisions), //.after(TransformSystem::TransformPropagate),
+            ),
         )
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
@@ -58,6 +68,14 @@ fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity, 
     }
 }
 
+fn update_shape_transforms(
+    mut shapes: Query<(&mut CollisionShape, &GlobalTransform), Changed<GlobalTransform>>,
+) {
+    for (mut shape, transform) in shapes.iter_mut() {
+        shape.set_transform(*transform);
+    }
+}
+
 fn score_ui(mut ctx: ResMut<EguiContext>, score: Res<Score>) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
@@ -79,14 +97,6 @@ fn score_ui(mut ctx: ResMut<EguiContext>, score: Res<Score>) {
                     .size(100.),
             )
         });
-}
-
-fn update_shape_transforms(
-    mut shapes: Query<(&mut CollisionShape, &GlobalTransform), Changed<GlobalTransform>>,
-) {
-    for (mut shape, transform) in shapes.iter_mut() {
-        shape.set_transform(*transform);
-    }
 }
 
 fn move_paddle(
@@ -118,6 +128,7 @@ fn move_paddle(
 
 fn check_collisions(
     mut score: ResMut<Score>,
+    mut state: ResMut<State<AppState>>,
     mut ball: Query<
         (&mut Velocity, &mut Transform, &CollisionShape),
         (With<Ball>, Changed<CollisionShape>, Without<Paddle>),
@@ -156,6 +167,9 @@ fn check_collisions(
                 }
             }
         }
+    }
+    if score.left >= 5 || score.right > 5 {
+        state.set(AppState::Menu).unwrap();
     }
 }
 
