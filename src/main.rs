@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 
 use bevy::{prelude::*, transform::TransformSystem};
+use bevy_egui::{egui, EguiContext, EguiPlugin};
 use impacted::CollisionShape;
 // use bevy_inspector_egui::WorldInspectorPlugin;
 
@@ -13,6 +14,12 @@ struct Score {
     pub right: usize,
 }
 
+impl std::fmt::Display for Score {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}:{}", self.left, self.right))
+    }
+}
+
 fn main() {
     App::new()
         .add_startup_system(setup)
@@ -20,6 +27,7 @@ fn main() {
         .add_system(apply_velocity)
         .add_system(move_paddle)
         .add_system(rotate_paddle)
+        .add_system(score_ui)
         .add_system_to_stage(
             CoreStage::PostUpdate,
             update_shape_transforms
@@ -27,6 +35,7 @@ fn main() {
                 .after(TransformSystem::TransformPropagate),
         )
         .add_plugins(DefaultPlugins)
+        .add_plugin(EguiPlugin)
         // Inspector
         // .add_plugin(WorldInspectorPlugin::new())
         .run();
@@ -47,6 +56,29 @@ fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity, 
     for (mut transform, velocity, speed) in query.iter_mut() {
         transform.translation += velocity.0 * speed.0 * time.delta().as_secs_f32();
     }
+}
+
+fn score_ui(mut ctx: ResMut<EguiContext>, score: Res<Score>) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "my_font".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/bit5x3.ttf")),
+    );
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "my_font".to_owned());
+    ctx.ctx_mut().set_fonts(fonts);
+    egui::Area::new("Score")
+        .anchor(egui::Align2::CENTER_TOP, [0.0, 20.0])
+        .show(ctx.ctx_mut(), |ui| {
+            ui.label(
+                egui::RichText::new(format!("{}", score.into_inner()))
+                    .strong()
+                    .size(100.),
+            )
+        });
 }
 
 fn update_shape_transforms(
