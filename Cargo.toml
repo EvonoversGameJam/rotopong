@@ -8,5 +8,4 @@ edition = "2021"
 [dependencies]
 bevy = "0.7"
 impacted = { version = "1.4.0", features = ["bevy-07"] }
-bevy-inspector-egui = "0.10.0"
 bevy_egui = "0.13"

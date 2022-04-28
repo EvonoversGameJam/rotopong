@@ -1,12 +1,13 @@
 use std::f32::consts::PI;
 
-use bevy::{prelude::*, transform::TransformSystem};
+use bevy::{core::FixedTimestep, prelude::*, transform::TransformSystem};
 use bevy_egui::{egui, EguiContext, EguiPlugin};
 use impacted::CollisionShape;
-// use bevy_inspector_egui::WorldInspectorPlugin;
 
 mod components;
 use components::*;
+
+const TIMESTEP: f32 = 1. / 60.;
 
 #[derive(Debug)]
 struct Score {
@@ -14,6 +15,11 @@ struct Score {
     pub right: usize,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum GameState {
+    InGame,
+    Menu,
+}
 impl std::fmt::Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{}:{}", self.left, self.right))
@@ -24,20 +30,19 @@ fn main() {
     App::new()
         .add_startup_system(setup)
         .insert_resource(Score { left: 0, right: 0 })
-        .add_system(apply_velocity)
-        .add_system(move_paddle)
-        .add_system(rotate_paddle)
+        .add_state(GameState::InGame)
         .add_system(score_ui)
-        .add_system_to_stage(
-            CoreStage::PostUpdate,
-            update_shape_transforms
-                .chain(check_collisions)
-                .after(TransformSystem::TransformPropagate),
+        .add_system_set(
+            SystemSet::on_update(GameState::InGame)
+                .with_run_criteria(FixedTimestep::step(TIMESTEP as f64))
+                .with_system(update_shape_transforms)
+                .with_system(check_collisions.after(update_shape_transforms))
+                .with_system(apply_velocity.before(check_collisions))
+                .with_system(move_paddle.before(check_collisions))
+                .with_system(rotate_paddle.before(check_collisions))
         )
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
-        // Inspector
-        // .add_plugin(WorldInspectorPlugin::new())
         .run();
 }
 
@@ -52,9 +57,9 @@ fn setup(mut commands: Commands, windows: Res<Windows>) {
     PlayerBundle::spawn_right(&mut commands, window);
 }
 
-fn apply_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity, &Speed)>) {
+fn apply_velocity(mut query: Query<(&mut Transform, &Velocity, &Speed)>) {
     for (mut transform, velocity, speed) in query.iter_mut() {
-        transform.translation += velocity.0 * speed.0 * time.delta().as_secs_f32();
+        transform.translation += velocity.0 * speed.0 * TIMESTEP
     }
 }
 
@@ -117,10 +122,11 @@ fn move_paddle(
 }
 
 fn check_collisions(
+    mut state: ResMut<State<GameState>>,
     mut score: ResMut<Score>,
     mut ball: Query<
         (&mut Velocity, &mut Transform, &CollisionShape),
-        (With<Ball>, Changed<CollisionShape>, Without<Paddle>),
+        (With<Ball>, Without<Paddle>),
     >,
     paddles: Query<(&Transform, &CollisionShape), (With<Paddle>, Without<Ball>)>,
     walls: Query<(&CollisionShape, &Wall)>,
@@ -135,7 +141,8 @@ fn check_collisions(
     for (wall_shape, kind) in walls.iter() {
         if wall_shape.is_collided_with(ball_shape) {
             match kind {
-                Wall::Horizontal => ball_velocity.0.y *= -1.,
+                Wall::Horizontal(HSide::Bottom) => if ball_velocity.0.y > 0. { ball_velocity.0.y *= -1. },
+                Wall::Horizontal(HSide::Top) => if ball_velocity.0.y < 0. { ball_velocity.0.y *= -1. },
                 Wall::Vertical(Side::Left) => {
                     score.right += 1;
                     ball_velocity.0 = Vec3::X;
@@ -157,19 +164,21 @@ fn check_collisions(
             }
         }
     }
+    if score.right >= 5 || score.left >= 5 {
+        state.set(GameState::Menu).unwrap();
+    }
 }
 
 fn rotate_paddle(
-    time: Res<Time>,
     input: Res<Input<KeyCode>>,
     mut query: Query<(&mut Transform, &InputConfig), With<Paddle>>,
 ) {
     for (mut transform, keys) in query.iter_mut() {
         if input.pressed(keys.rot_1) {
-            transform.rotation *= Quat::from_rotation_z(time.delta().as_secs_f32() * 2.);
+            transform.rotation *= Quat::from_rotation_z(TIMESTEP * 2.);
         }
         if input.pressed(keys.rot_2) {
-            transform.rotation *= Quat::from_rotation_z(time.delta().as_secs_f32() * -2.);
+            transform.rotation *= Quat::from_rotation_z(TIMESTEP * -2.);
         }
     }
 }

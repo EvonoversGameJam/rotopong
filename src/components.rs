@@ -135,7 +135,7 @@ impl WallBundle {
             Vec2::new(10.0, window.height() - 10.),
         ));
         commands.spawn().insert_bundle(WallBundle::new(
-            Wall::Horizontal,
+            Wall::Horizontal(HSide::Top),
             Transform {
                 translation: Vec3::new(0.0, -window.height() / 2. + 10.0, 0.0),
                 ..Default::default()
@@ -143,7 +143,7 @@ impl WallBundle {
             Vec2::new(window.width() - 10., 10.0),
         ));
         commands.spawn().insert_bundle(WallBundle::new(
-            Wall::Horizontal,
+            Wall::Horizontal(HSide::Bottom),
             Transform {
                 translation: Vec3::new(0.0, window.height() / 2. - 10.0, 0.0),
                 ..Default::default()
@@ -164,9 +164,14 @@ pub enum Side {
     Right
 }
 
+pub enum HSide {
+    Top,
+    Bottom
+}
+
 #[derive(Component)]
 pub enum Wall {
-    Horizontal,
+    Horizontal(HSide),
     Vertical(Side),
 }
 
