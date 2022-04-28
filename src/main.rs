@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::{core::FixedTimestep, prelude::*, transform::TransformSystem};
+use bevy::{core::FixedTimestep, ecs::schedule::ShouldRun, prelude::*, transform::TransformSystem};
 use bevy_egui::{egui, EguiContext, EguiPlugin};
 use impacted::CollisionShape;
 
@@ -17,8 +17,8 @@ struct Score {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 enum GameState {
-    InGame,
     Menu,
+    InGame,
 }
 impl std::fmt::Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -30,16 +30,25 @@ fn main() {
     App::new()
         .add_startup_system(setup)
         .insert_resource(Score { left: 0, right: 0 })
-        .add_state(GameState::InGame)
+        .add_state(GameState::Menu)
         .add_system(score_ui)
+        .add_system_set(SystemSet::on_update(GameState::Menu).with_system(menu_ui))
         .add_system_set(
-            SystemSet::on_update(GameState::InGame)
-                .with_run_criteria(FixedTimestep::step(TIMESTEP as f64))
+            SystemSet::new()
+                .with_run_criteria(FixedTimestep::step(TIMESTEP as f64).chain(
+                    |In(input): In<ShouldRun>, state: Res<State<GameState>>| {
+                        if state.current() == &GameState::InGame {
+                            input
+                        } else {
+                            ShouldRun::No
+                        }
+                    },
+                ))
                 .with_system(update_shape_transforms)
                 .with_system(check_collisions.after(update_shape_transforms))
                 .with_system(apply_velocity.before(check_collisions))
                 .with_system(move_paddle.before(check_collisions))
-                .with_system(rotate_paddle.before(check_collisions))
+                .with_system(rotate_paddle.before(check_collisions)),
         )
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
@@ -64,7 +73,8 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity, &Speed)>) {
 }
 
 fn score_ui(mut ctx: ResMut<EguiContext>, score: Res<Score>) {
-    let mut fonts = egui::FontDefinitions::default();
+    let default_fonts = egui::FontDefinitions::default();
+    let mut fonts = default_fonts.clone();
     fonts.font_data.insert(
         "my_font".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/bit5x3.ttf")),
@@ -84,6 +94,24 @@ fn score_ui(mut ctx: ResMut<EguiContext>, score: Res<Score>) {
                     .size(100.),
             )
         });
+}
+
+fn menu_ui(
+    input: Res<Input<KeyCode>>,
+    mut state: ResMut<State<GameState>>,
+    mut score: ResMut<Score>,
+    mut ctx: ResMut<EguiContext>,
+) {
+    egui::Area::new("Test")
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx.ctx_mut(), |ui| {
+            ui.label("Press space to start");
+        });
+    if input.pressed(KeyCode::Space) {
+        state.set(GameState::InGame).unwrap();
+        score.left = 0;
+        score.right = 0;
+    }
 }
 
 fn update_shape_transforms(
@@ -141,8 +169,16 @@ fn check_collisions(
     for (wall_shape, kind) in walls.iter() {
         if wall_shape.is_collided_with(ball_shape) {
             match kind {
-                Wall::Horizontal(HSide::Bottom) => if ball_velocity.0.y > 0. { ball_velocity.0.y *= -1. },
-                Wall::Horizontal(HSide::Top) => if ball_velocity.0.y < 0. { ball_velocity.0.y *= -1. },
+                Wall::Horizontal(HSide::Bottom) => {
+                    if ball_velocity.0.y > 0. {
+                        ball_velocity.0.y *= -1.
+                    }
+                }
+                Wall::Horizontal(HSide::Top) => {
+                    if ball_velocity.0.y < 0. {
+                        ball_velocity.0.y *= -1.
+                    }
+                }
                 Wall::Vertical(Side::Left) => {
                     score.right += 1;
                     ball_velocity.0 = Vec3::X;
